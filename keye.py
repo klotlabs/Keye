@@ -27,7 +27,7 @@ def db_install():
     else:
         pass
 
-def addsingleurl():
+def addsingleurl(): 
     url = args.singleurl
     request(url)
 
@@ -43,8 +43,11 @@ def request(url):
             url = "http://" + url
         contentlength = requests.get(url, allow_redirects=True, verify=False, timeout=5).headers['content-length']
         try:
-            committodb(url, contentlength)
-            print("We have successfully added the URL to be monitored.")
+            if not check_if_present(url):
+                committodb(url, contentlength)
+                print("We have successfully added the URL to be monitored.")
+            else:
+                print("URL already existent in db")
         except Exception as e:
             print(e)
 
@@ -112,6 +115,16 @@ def notify(url):
     webhook_url = posting_webhook
     slack_data = {'text': 'Changes detected on: ' + url}
     sendnotification = requests.post(webhook_url, data=json.dumps(slack_data), headers={'Content-Type': 'application/json'})
+
+def check_if_present(url):
+    try:
+        cursor.execute('''SELECT * from urls where url = ? ''',(url,))
+        if cursor.fetchall():
+            return True
+        else:
+            return False
+    except Exception as e:
+        return False
 
 db_install()
 db = sqlite3.connect('keye.db')
