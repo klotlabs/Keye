@@ -6,6 +6,7 @@ import sqlite3
 import os
 from slackconfig import *
 import json
+import hashlib
 requests.packages.urllib3.disable_warnings()
 
 parser = argparse.ArgumentParser()
@@ -21,7 +22,7 @@ def db_install():
         cursor = db.cursor()
         cursor.execute('''
             CREATE TABLE urls(id INTEGER PRIMARY KEY, url TEXT,
-                               contentlength INTEGER)''')
+                               hash INTEGER)''')
         db.commit()
         db.close()
     else:
@@ -41,10 +42,11 @@ def request(url):
     try:
         if not "http" in url:
             url = "http://" + url
-        contentlength = requests.get(url, allow_redirects=True, verify=False, timeout=5).headers['content-length']
+        response = requests.get(url, allow_redirects=True, verify=False, timeout=5)
+        hash = hashlib.sha224(response.text.encode()).hexdigest()
         try:
             if not check_if_present(url):
-                committodb(url, contentlength)
+                committodb(url, hash)
                 print("We have successfully added the URL to be monitored.")
             else:
                 print("URL already existent in db")
@@ -54,40 +56,42 @@ def request(url):
     except:
         try:
             url = url.replace("http://", "https://")
-            contentlength = requests.get(url, allow_redirects=True, timeout=5).headers['content-length']
-            committodb(url, contentlength)
+            response = requests.get(url, allow_redirects=True, timeout=5)
+            hash = hashlib.sha224(response.text.encode()).hexdigest()
+            committodb(url, hash)
             print("We have successfully added the URL to be monitored.")
         except Exception as e:
             print("We could not connect to {} due to following error: {}".format(url, e))
 
-def committodb(url, contentlength):
+def committodb(url, hash):
     try:
-        cursor.execute('''INSERT INTO urls(url, contentlength)
-                          VALUES(?,?)''', (url, contentlength))
+        cursor.execute('''INSERT INTO urls(url, hash)
+                          VALUES(?,?)''', (url, hash))
         db.commit()
     except Exception as e:
         print(e)
 
 def getfromdb():
     try:
-        cursor.execute('''SELECT id, url, contentlength FROM urls''')
+        cursor.execute('''SELECT id, url, hash FROM urls''')
         all_rows = cursor.fetchall()
         for row in all_rows:
             id = row[0]
             url = row[1]
-            contentlength = str(row[2])
-            connect(id, url, contentlength)
+            hash = str(row[2])
+            connect(id, url, hash)
     except Exception as e:
         print(e)
 
-def connect(id, url, contentlength):
+def connect(id, url, hash):
     try:
-        newcontentlength = requests.get(url, allow_redirects=True, verify=False, timeout=5).headers['content-length']
-        if newcontentlength == contentlength:
+        newresponse = requests.get(url, allow_redirects=True, verify=False, timeout=5)
+        newhash = hashlib.sha224(newresponse.text.encode()).hexdigest()
+        if newhash == hash:
             pass
         else:
             notify(url)
-            cursor.execute('''UPDATE urls SET contentlength = ? WHERE id = ? ''', (newcontentlength, id))
+            cursor.execute('''UPDATE urls SET hash = ? WHERE id = ? ''', (newhash, id))
             db.commit()
     except Exception as e:
         print("We could not connect to {} due to following error: {}".format(url, e))
